@@ -109,6 +109,10 @@ instance (MonadResource m, MonadLogger m) => PersistQuery (SqlPersistT m) where
             case fromPersistValues xs of
                 Left e -> Left e
                 Right xs' -> Right (Entity (Key $ PersistInt64 (truncate x)) xs') -- convert back to int64
+        fromPersistValues' (PersistText x:xs) =
+            case fromPersistValues xs of
+                Left e -> Left e
+                Right xs' -> Right (Entity (Key $ PersistText x) xs')
         fromPersistValues' xs = Left $ T.pack ("error in fromPersistValues' xs=" ++ show xs)
 
         fromPersistValuesComposite' keyvals xs =
