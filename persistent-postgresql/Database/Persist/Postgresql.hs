@@ -148,15 +148,15 @@ insertSql' ent vals =
                     then " DEFAULT VALUES"
                     else T.concat
                         [ "("
-                        , T.intercalate "," $ map (escape . fieldDB) $ entityFields ent
+                        , T.intercalate "," $ (escape $ DBName "id") : (map (escape . fieldDB) $ entityFields ent)
                         , ") VALUES("
-                        , T.intercalate "," (map (const "?") $ entityFields ent)
+                        , T.intercalate "," $ "?" : (map (const "?") $ entityFields ent)
                         , ")"
                         ]
                 ]
   in case entityPrimary ent of
        Just _pdef -> ISRManyKeys sql vals
-       Nothing -> ISRSingle (sql <> " RETURNING " <> escape (entityID ent))
+       Nothing -> ISRSingle sql -- <> " RETURNING " <> escape (entityID ent))
 
 execute' :: PG.Connection -> PG.Query -> [PersistValue] -> IO Int64
 execute' conn query vals = PG.execute conn query (map P vals)

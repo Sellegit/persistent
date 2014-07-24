@@ -47,7 +47,7 @@ module Database.Persist.MongoDB
     , MongoRegexSearchable
 
     -- * MongoDB specific PersistFields
-    , Objectid
+    , Objectid (..)
     , genObjectid
 
     -- * Key conversion helpers
