@@ -40,6 +40,7 @@ import qualified Data.Text.Read
 data InsertSqlResult = ISRSingle Text
                      | ISRInsertGet Text Text
                      | ISRManyKeys Text [PersistValue]
+    deriving Show
 
 data Connection = Connection
     { connPrepare :: Text -> IO Statement

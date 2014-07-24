@@ -1,5 +1,6 @@
 {-# LANGUAGE TypeFamilies #-}
 {-# LANGUAGE OverloadedStrings #-}
+{-# LANGUAGE TemplateHaskell #-}
 {-# OPTIONS_GHC -fno-warn-orphans #-}
 module Database.Persist.Sql.Orphan.PersistStore () where
 
@@ -19,20 +20,23 @@ import Data.ByteString.Char8 (readInteger)
 import Data.Maybe (isJust)
 import Data.List (find)
 import Control.Monad.Trans.Resource (MonadResource)
+import Data.Bson (genObjectId)
+import Control.Monad.Logger (logDebug)
+import Control.Monad.Trans.Class (lift)
 
 instance (MonadResource m, MonadLogger m) => PersistStore (SqlPersistT m) where
     type PersistMonadBackend (SqlPersistT m) = SqlBackend
     insert val = do
         conn <- askSqlConn
         let esql = connInsertSql conn t vals
+        $logDebug $ T.pack $ show esql
         key <-
             case esql of
-                ISRSingle sql -> rawQuery sql vals C.$$ do
-                    x <- CL.head
-                    case x of
-                        Just [PersistInt64 i] -> return $ Key $ PersistInt64 i
-                        Nothing -> error $ "SQL insert did not return a result giving the generated ID"
-                        Just vals' -> error $ "Invalid result from a SQL insert, got: " ++ show vals'
+                ISRSingle sql -> do
+                    oid <- liftIO genObjectId
+                    let oidStr = toPersistValue $ show oid
+                    rawExecute sql (oidStr:vals)
+                    return $ Key $ oidStr
                 ISRInsertGet sql1 sql2 -> do
                     rawExecute sql1 vals
                     rawQuery sql2 [] C.$$ do

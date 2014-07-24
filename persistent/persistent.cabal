@@ -46,6 +46,7 @@ library
                    , silently
                    , scientific
                    , resource-pool
+                   , bson                     >= 0.2     && < 0.3
 
     exposed-modules: Database.Persist
                      Database.Persist.Quasi
