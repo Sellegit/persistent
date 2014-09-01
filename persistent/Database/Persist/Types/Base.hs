@@ -379,11 +379,11 @@ newtype KeyBackend backend entity = Key { unKey :: PersistValue }
 type family KeyEntity key
 type instance KeyEntity (KeyBackend backend entity) = entity
 
-instance A.ToJSON (KeyBackend backend entity) where
-    toJSON (Key val) = A.toJSON val
-
-instance A.FromJSON (KeyBackend backend entity) where
-    parseJSON = fmap Key . A.parseJSON
+--  instance A.ToJSON (KeyBackend backend entity) where
+--      toJSON (Key val) = A.toJSON val
+--  
+--  instance A.FromJSON (KeyBackend backend entity) where
+--      parseJSON = fmap Key . A.parseJSON
 
 data PersistFilter = Eq | Ne | Gt | Lt | Ge | Le | In | NotIn
                    | BackendSpecificFilter T.Text

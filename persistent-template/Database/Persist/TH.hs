@@ -18,9 +18,9 @@ module Database.Persist.TH
     , mpsBackend
     , mpsGeneric
     , mpsPrefixFields
-    , mpsEntityJSON
+    -- , mpsEntityJSON
     , mpsGenerateLenses
-    , EntityJSON(..)
+    -- , EntityJSON(..)
     , mkPersistSettings
     , sqlSettings
     , sqlOnlySettings
@@ -30,7 +30,7 @@ module Database.Persist.TH
     , mkDeleteCascade
     , share
     , derivePersistField
-    , derivePersistFieldJSON
+    -- , derivePersistFieldJSON
     , persistFieldFromEntity
       -- * Internal
     , packPTH
@@ -162,8 +162,8 @@ mkPersist :: MkPersistSettings -> [EntityDef SqlType] -> Q [Dec]
 mkPersist mps ents' = do
     x <- fmap mconcat $ mapM (persistFieldFromEntity mps) ents
     y <- fmap mconcat $ mapM (mkEntity mps) ents
-    z <- fmap mconcat $ mapM (mkJSON mps) ents
-    return $ mconcat [x, y, z]
+    -- z <- fmap mconcat $ mapM (mkJSON mps) ents
+    return $ mconcat [x, y] --, z]
   where
     ents = map fixEntityDef ents'
 
@@ -190,7 +190,7 @@ data MkPersistSettings = MkPersistSettings
     -- True.
     , mpsPrefixFields :: Bool
     -- ^ Prefix field names with the model name. Default: True.
-    , mpsEntityJSON :: Maybe EntityJSON
+    --  , mpsEntityJSON :: Maybe EntityJSON
     -- ^ Generate @ToJSON@/@FromJSON@ instances for each model types. If it's
     -- @Nothing@, no instances will be generated. Default:
     --
@@ -208,12 +208,12 @@ data MkPersistSettings = MkPersistSettings
     -- Since 1.3.1
     }
 
-data EntityJSON = EntityJSON
-    { entityToJSON :: Name
-    -- ^ Name of the @toJSON@ implementation for @Entity a@.
-    , entityFromJSON :: Name
-    -- ^ Name of the @fromJSON@ implementation for @Entity a@.
-    }
+-- data EntityJSON = EntityJSON
+--     { entityToJSON :: Name
+--     -- ^ Name of the @toJSON@ implementation for @Entity a@.
+--     , entityFromJSON :: Name
+--     -- ^ Name of the @fromJSON@ implementation for @Entity a@.
+--     }
 
 -- | Create an @MkPersistSettings@ with default values.
 mkPersistSettings :: Type -- ^ Value for 'mpsBackend'
@@ -222,10 +222,10 @@ mkPersistSettings t = MkPersistSettings
     { mpsBackend = t
     , mpsGeneric = True -- FIXME switch default to False in the future
     , mpsPrefixFields = True
-    , mpsEntityJSON = Just EntityJSON
-        { entityToJSON = 'keyValueEntityToJSON
-        , entityFromJSON = 'keyValueEntityFromJSON
-        }
+    --, mpsEntityJSON = Just EntityJSON
+    --    { entityToJSON = 'keyValueEntityToJSON
+    --    , entityFromJSON = 'keyValueEntityFromJSON
+    --    }
     , mpsGenerateLenses = False
     }
 
@@ -942,28 +942,28 @@ derivePersistField s = do
 --    instance PersistFieldSql T where
 --        sqlType _ = SqlString
 -- @
-derivePersistFieldJSON :: String -> Q [Dec]
-derivePersistFieldJSON s = do
-    ss <- [|SqlString|]
-    tpv <- [|PersistByteString . BL.toStrict . encode|]
-    fpv <- [|\dt v -> do
-                bs' <- fromPersistValue v
-                case eitherDecodeStrict' bs' of
-                    Left e -> Left $ pack "JSON decoding error for " ++ pack dt ++ pack ": " ++ pack e ++ pack ". On Input: " ++ decodeUtf8 bs'
-                    Right x -> Right x|]
-    return
-        [ persistFieldInstanceD (ConT $ mkName s)
-            [ FunD 'toPersistValue
-                [ Clause [] (NormalB tpv) []
-                ]
-            , FunD 'fromPersistValue
-                [ Clause [] (NormalB $ fpv `AppE` LitE (StringL s)) []
-                ]
-            ]
-        , persistFieldSqlInstanceD (ConT $ mkName s)
-            [ sqlTypeFunD ss
-            ]
-        ]
+-- derivePersistFieldJSON :: String -> Q [Dec]
+-- derivePersistFieldJSON s = do
+--     ss <- [|SqlString|]
+--     tpv <- [|PersistByteString . BL.toStrict . encode|]
+--     fpv <- [|\dt v -> do
+--                 bs' <- fromPersistValue v
+--                 case eitherDecodeStrict' bs' of
+--                     Left e -> Left $ pack "JSON decoding error for " ++ pack dt ++ pack ": " ++ pack e ++ pack ". On Input: " ++ decodeUtf8 bs'
+--                     Right x -> Right x|]
+--     return
+--         [ persistFieldInstanceD (ConT $ mkName s)
+--             [ FunD 'toPersistValue
+--                 [ Clause [] (NormalB tpv) []
+--                 ]
+--             , FunD 'fromPersistValue
+--                 [ Clause [] (NormalB $ fpv `AppE` LitE (StringL s)) []
+--                 ]
+--             ]
+--         , persistFieldSqlInstanceD (ConT $ mkName s)
+--             [ sqlTypeFunD ss
+--             ]
+--         ]
 
 -- | Creates a single function to perform all migrations for the entities
 -- defined here. One thing to be aware of is dependencies: if you have entities
@@ -1170,63 +1170,63 @@ infixr 5 ++
 (++) :: Text -> Text -> Text
 (++) = append
 
-mkJSON :: MkPersistSettings -> EntityDef a -> Q [Dec]
-mkJSON _ def | not ("json" `elem` entityAttrs def) = return []
-mkJSON mps def = do
-    pureE <- [|pure|]
-    apE' <- [|(<*>)|]
-    packE <- [|pack|]
-    dotEqualE <- [|(.=)|]
-    dotColonE <- [|(.:)|]
-    dotColonQE <- [|(.:?)|]
-    objectE <- [|object|]
-    obj <- newName "obj"
-    mzeroE <- [|mzero|]
-
-    xs <- mapM (newName . unpack . unHaskellName . fieldHaskell)
-        $ entityFields def
-
-    let conName = mkName $ unpack $ unHaskellName $ entityHaskell def
-        typ = genericDataType mps (unHaskellName $ entityHaskell def) $ VarT $ mkName "backend"
-        toJSONI = InstanceD
-            []
-            (ConT ''ToJSON `AppT` typ)
-            [toJSON']
-        toJSON' = FunD 'toJSON $ return $ Clause
-            [ConP conName $ map VarP xs]
-            (NormalB $ objectE `AppE` ListE pairs)
-            []
-        pairs = zipWith toPair (entityFields def) xs
-        toPair f x = InfixE
-            (Just (packE `AppE` LitE (StringL $ unpack $ unHaskellName $ fieldHaskell f)))
-            dotEqualE
-            (Just $ VarE x)
-        fromJSONI = InstanceD
-            []
-            (ConT ''FromJSON `AppT` typ)
-            [parseJSON']
-        parseJSON' = FunD 'parseJSON
-            [ Clause [ConP 'Object [VarP obj]]
-                (NormalB $ foldl'
-                    (\x y -> InfixE (Just x) apE' (Just y))
-                    (pureE `AppE` ConE conName)
-                    pulls
-                )
-                []
-            , Clause [WildP] (NormalB mzeroE) []
-            ]
-        pulls = map toPull $ entityFields def
-        toPull f = InfixE
-            (Just $ VarE obj)
-            (if nullable (fieldAttrs f) == Nullable ByMaybeAttr then dotColonQE else dotColonE)
-            (Just $ AppE packE $ LitE $ StringL $ unpack $ unHaskellName $ fieldHaskell f)
-    case mpsEntityJSON mps of
-        Nothing -> return [toJSONI, fromJSONI]
-        Just entityJSON -> do
-            entityJSONIs <- [d|
-                instance ToJSON (Entity $(pure typ)) where
-                    toJSON = $(varE (entityToJSON entityJSON))
-                instance FromJSON (Entity $(pure typ)) where
-                    parseJSON = $(varE (entityFromJSON entityJSON))
-                |]
-            return $ toJSONI : fromJSONI : entityJSONIs
+-- mkJSON :: MkPersistSettings -> EntityDef a -> Q [Dec]
+-- mkJSON _ def | not ("json" `elem` entityAttrs def) = return []
+-- mkJSON mps def = do
+--     pureE <- [|pure|]
+--     apE' <- [|(<*>)|]
+--     packE <- [|pack|]
+--     dotEqualE <- [|(.=)|]
+--     dotColonE <- [|(.:)|]
+--     dotColonQE <- [|(.:?)|]
+--     objectE <- [|object|]
+--     obj <- newName "obj"
+--     mzeroE <- [|mzero|]
+-- 
+--     xs <- mapM (newName . unpack . unHaskellName . fieldHaskell)
+--         $ entityFields def
+-- 
+--     let conName = mkName $ unpack $ unHaskellName $ entityHaskell def
+--         typ = genericDataType mps (unHaskellName $ entityHaskell def) $ VarT $ mkName "backend"
+--         toJSONI = InstanceD
+--             []
+--             (ConT ''ToJSON `AppT` typ)
+--             [toJSON']
+--         toJSON' = FunD 'toJSON $ return $ Clause
+--             [ConP conName $ map VarP xs]
+--             (NormalB $ objectE `AppE` ListE pairs)
+--             []
+--         pairs = zipWith toPair (entityFields def) xs
+--         toPair f x = InfixE
+--             (Just (packE `AppE` LitE (StringL $ unpack $ unHaskellName $ fieldHaskell f)))
+--             dotEqualE
+--             (Just $ VarE x)
+--         fromJSONI = InstanceD
+--             []
+--             (ConT ''FromJSON `AppT` typ)
+--             [parseJSON']
+--         parseJSON' = FunD 'parseJSON
+--             [ Clause [ConP 'Object [VarP obj]]
+--                 (NormalB $ foldl'
+--                     (\x y -> InfixE (Just x) apE' (Just y))
+--                     (pureE `AppE` ConE conName)
+--                     pulls
+--                 )
+--                 []
+--             , Clause [WildP] (NormalB mzeroE) []
+--             ]
+--         pulls = map toPull $ entityFields def
+--         toPull f = InfixE
+--             (Just $ VarE obj)
+--             (if nullable (fieldAttrs f) == Nullable ByMaybeAttr then dotColonQE else dotColonE)
+--             (Just $ AppE packE $ LitE $ StringL $ unpack $ unHaskellName $ fieldHaskell f)
+    -- case mpsEntityJSON mps of
+    --     Nothing -> return [toJSONI, fromJSONI]
+    --     Just entityJSON -> do
+    --         entityJSONIs <- [d|
+    --             instance ToJSON (Entity $(pure typ)) where
+    --                 toJSON = $(varE (entityToJSON entityJSON))
+    --             instance FromJSON (Entity $(pure typ)) where
+    --                 parseJSON = $(varE (entityFromJSON entityJSON))
+    --             |]
+    --         return $ toJSONI : fromJSONI : entityJSONIs
